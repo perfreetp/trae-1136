@@ -408,6 +408,32 @@ const costTrend: CostTrend[] = [
   { month: '2026-06', budget: 4600000, actual: 2836800 },
 ]
 
+export interface InventoryItem {
+  materialName: string
+  unit: string
+  inboundQty: number
+  outboundQty: number
+  returnQty: number
+  currentQty: number
+}
+
+export interface InventoryTransaction {
+  id: string
+  date: string
+  type: '验收入库' | '领料出库' | '退库入库'
+  materialName: string
+  qty: number
+  relatedId: string
+}
+
+export interface TodoItem {
+  id: string
+  type: '采购审批' | '付款审批' | '出库审核' | '物资签收'
+  title: string
+  date: string
+  path: string
+}
+
 interface StoreState {
   projects: ProjectInfo[]
   materialPlans: MaterialPlan[]
@@ -429,8 +455,6 @@ interface StoreState {
   monthlyArrival: MonthlyStat[]
   monthlyIssue: MonthlyStat[]
   monthlyReturn: MonthlyStat[]
-  costByCategory: CostByCategory[]
-  costTrend: CostTrend[]
   currentRole: string
   setCurrentRole: (role: string) => void
   sidebarCollapsed: boolean
@@ -441,32 +465,146 @@ interface StoreState {
   signSubcontractor: (id: string, qty: number) => void
   acceptMaterialReturn: (id: string) => void
   returnEquipment: (id: string, returnDate: string) => void
+  approvePurchaseRequest: (id: string) => void
+  rejectPurchaseRequest: (id: string, comment: string) => void
+  approvePaymentRequest: (id: string) => void
+  rejectPaymentRequest: (id: string, comment: string) => void
+  approveWarehouseIssue: (id: string) => void
 }
 
-const computeDerived = (s: StoreState) => {
+interface DerivedState {
+  pendingTodoCount: number
+  pendingPurchaseCount: number
+  pendingPaymentCount: number
+  pendingIssueCount: number
+  pendingSignCount: number
+  budgetExecutionRate: number
+  purchaseCompletionRate: number
+  acceptancePassRate: number
+  inventoryTurnoverRate: number
+  todoItems: TodoItem[]
+  inventoryItems: InventoryItem[]
+  inventoryTransactions: InventoryTransaction[]
+  costByCategory: CostByCategory[]
+  costTrend: CostTrend[]
+  totalContractAmount: number
+  totalPaidAmount: number
+  totalPendingPayment: number
+}
+
+const computeDerived = (s: StoreState): DerivedState => {
   const totalBudget = s.projects.reduce((a, p) => a + p.budgetTotal, 0)
   const totalSpent = s.projects.reduce((a, p) => a + p.spentTotal, 0)
   const totalPlanned = s.materialPlans.reduce((a, m) => a + m.plannedQty, 0)
   const totalPurchased = s.materialPlans.reduce((a, m) => a + m.purchasedQty, 0)
   const totalOrdered = s.siteAcceptances.reduce((a, x) => a + x.orderedQty, 0)
   const totalQualified = s.siteAcceptances.reduce((a, x) => a + x.qualifiedQty, 0)
-  const totalIssued = s.warehouseIssues.reduce((a, w) => a + w.issuedQty, 0)
+  const totalIssued = s.warehouseIssues.filter(w => w.status === '已出库').reduce((a, w) => a + w.issuedQty, 0)
   const totalUsed = s.materialPlans.reduce((a, m) => a + m.usedQty, 0)
-  const pendingRequests = s.purchaseRequests.filter(r => r.status === '待审批').length
-  const pendingPayments = s.paymentRequests.filter(r => r.status === '待审批').length
-  const pendingIssues = s.warehouseIssues.filter(w => w.status === '待审核').length
-  const pendingSigns = s.subcontractorSigns.filter(x => x.status === '待签收').length
+
+  const pendingPurchase = s.purchaseRequests.filter(r => r.status === '待审批')
+  const pendingPayment = s.paymentRequests.filter(r => r.status === '待审批')
+  const pendingIssue = s.warehouseIssues.filter(w => w.status === '待审核')
+  const pendingSign = s.subcontractorSigns.filter(x => x.status === '待签收')
+
+  const todoItems: TodoItem[] = [
+    ...pendingPurchase.map(r => ({ id: r.id, type: '采购审批' as const, title: `${r.materialName} x${r.qty}`, date: r.createdAt, path: '/plan' })),
+    ...pendingPayment.map(p => ({ id: p.id, type: '付款审批' as const, title: p.reason, date: p.createdAt, path: '/contract' })),
+    ...pendingIssue.map(w => ({ id: w.id, type: '出库审核' as const, title: `${w.materialName} → ${w.subcontractorName}`, date: w.issuedDate, path: '/material' })),
+    ...pendingSign.map(x => ({ id: x.id, type: '物资签收' as const, title: `${x.materialName} → ${x.subcontractorName}`, date: x.signedDate || '—', path: '/material' })),
+  ]
+
+  const planMap: Record<string, { unit: string }> = {}
+  s.materialPlans.forEach(m => { planMap[m.materialName] = { unit: m.unit } })
+
+  const qualifiedByMat: Record<string, number> = {}
+  s.siteAcceptances.filter(a => a.status === '合格' || a.status === '部分合格').forEach(a => {
+    qualifiedByMat[a.materialName] = (qualifiedByMat[a.materialName] || 0) + a.qualifiedQty
+  })
+  const issuedByMat: Record<string, number> = {}
+  s.warehouseIssues.filter(w => w.status === '已出库').forEach(w => {
+    issuedByMat[w.materialName] = (issuedByMat[w.materialName] || 0) + w.issuedQty
+  })
+  const returnedByMat: Record<string, number> = {}
+  s.materialReturns.filter(r => r.status === '已入库').forEach(r => {
+    returnedByMat[r.materialName] = (returnedByMat[r.materialName] || 0) + r.returnQty
+  })
+  const allMaterials = new Set([...Object.keys(qualifiedByMat), ...Object.keys(issuedByMat), ...Object.keys(returnedByMat)])
+  const inventoryItems: InventoryItem[] = Array.from(allMaterials).map(name => {
+    const inbound = qualifiedByMat[name] || 0
+    const outbound = issuedByMat[name] || 0
+    const ret = returnedByMat[name] || 0
+    return { materialName: name, unit: planMap[name]?.unit || '', inboundQty: inbound, outboundQty: outbound, returnQty: ret, currentQty: inbound - outbound + ret }
+  })
+
+  const transactions: InventoryTransaction[] = [
+    ...s.siteAcceptances.filter(a => a.status === '合格' || a.status === '部分合格').map(a => ({
+      id: a.id, date: new Date().toISOString().slice(0, 10), type: '验收入库' as const, materialName: a.materialName, qty: a.qualifiedQty, relatedId: a.id
+    })),
+    ...s.warehouseIssues.filter(w => w.status === '已出库').map(w => ({
+      id: w.id, date: w.issuedDate, type: '领料出库' as const, materialName: w.materialName, qty: w.issuedQty, relatedId: w.id
+    })),
+    ...s.materialReturns.filter(r => r.status === '已入库').map(r => ({
+      id: r.id, date: r.returnDate, type: '退库入库' as const, materialName: r.materialName, qty: r.returnQty, relatedId: r.id
+    })),
+  ].sort((a, b) => b.date.localeCompare(a.date))
+
+  const catMap: Record<string, number> = {}
+  s.contracts.forEach(c => { catMap[c.supplierName] = (catMap[c.supplierName] || 0) + c.amount })
+  const costByCategory: CostByCategory[] = Object.entries(catMap)
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value)
+
+  const totalContractAmount = s.contracts.reduce((a, c) => a + c.amount, 0)
+  const totalPaidAmount = s.contracts.reduce((a, c) => a + c.paidAmount, 0)
+  const totalPendingPayment = totalContractAmount - totalPaidAmount
+
+  const costTrend: CostTrend[] = [
+    { month: '2026-01', budget: 4500000, actual: Math.min(4500000, totalPaidAmount * 0.18) },
+    { month: '2026-02', budget: 4800000, actual: Math.min(4800000, totalPaidAmount * 0.28) },
+    { month: '2026-03', budget: 5200000, actual: Math.min(5200000, totalPaidAmount * 0.42) },
+    { month: '2026-04', budget: 5100000, actual: Math.min(5100000, totalPaidAmount * 0.62) },
+    { month: '2026-05', budget: 4900000, actual: Math.min(4900000, totalPaidAmount * 0.82) },
+    { month: '2026-06', budget: 4600000, actual: totalPaidAmount },
+  ]
+
   return {
-    pendingTodoCount: pendingRequests + pendingPayments + pendingIssues + pendingSigns,
+    pendingTodoCount: pendingPurchase.length + pendingPayment.length + pendingIssue.length + pendingSign.length,
+    pendingPurchaseCount: pendingPurchase.length,
+    pendingPaymentCount: pendingPayment.length,
+    pendingIssueCount: pendingIssue.length,
+    pendingSignCount: pendingSign.length,
     budgetExecutionRate: totalBudget > 0 ? Number(((totalSpent / totalBudget) * 100).toFixed(1)) : 0,
     purchaseCompletionRate: totalPlanned > 0 ? Number(((totalPurchased / totalPlanned) * 100).toFixed(1)) : 0,
     acceptancePassRate: totalOrdered > 0 ? Number(((totalQualified / totalOrdered) * 100).toFixed(1)) : 0,
     inventoryTurnoverRate: totalIssued > 0 ? Number(((totalUsed / totalIssued) * 100).toFixed(1)) : 0,
+    todoItems,
+    inventoryItems,
+    inventoryTransactions: transactions,
+    costByCategory,
+    costTrend,
+    totalContractAmount,
+    totalPaidAmount,
+    totalPendingPayment,
   }
 }
 
 let idCounter = 1000
 const nextId = (prefix: string) => `${prefix}${String(++idCounter)}`
+
+const addApproval = (s: StoreState, relatedType: string, relatedId: string, action: '提交' | '审批通过' | '驳回', comment: string): ApprovalRecord[] => {
+  const rec: ApprovalRecord = {
+    id: nextId('AR'),
+    relatedType,
+    relatedId,
+    action,
+    operator: s.currentRole,
+    role: s.currentRole,
+    comment,
+    createdAt: new Date().toISOString().slice(0, 10) + ' ' + new Date().toTimeString().slice(0, 5),
+  }
+  return [...s.approvalRecords, rec]
+}
 
 export const useStore = create<StoreState>((set, get) => ({
   projects,
@@ -489,8 +627,6 @@ export const useStore = create<StoreState>((set, get) => ({
   monthlyArrival,
   monthlyIssue,
   monthlyReturn,
-  costByCategory,
-  costTrend,
   currentRole: '物资经理',
   setCurrentRole: (role: string) => set({ currentRole: role }),
   sidebarCollapsed: false,
@@ -503,7 +639,7 @@ export const useStore = create<StoreState>((set, get) => ({
       createdAt: new Date().toISOString().slice(0, 10),
       approvedBy: '',
     }
-    set(s => ({ purchaseRequests: [...s.purchaseRequests, newReq] }))
+    set(s => ({ purchaseRequests: [...s.purchaseRequests, newReq], approvalRecords: addApproval(s, '采购申请', newReq.id, '提交', `提交采购申请：${req.materialName} x${req.qty}`) }))
   },
   addPaymentRequest: (req) => {
     const newReq: PaymentRequest = {
@@ -512,13 +648,13 @@ export const useStore = create<StoreState>((set, get) => ({
       status: '待审批',
       createdAt: new Date().toISOString().slice(0, 10),
     }
-    set(s => ({ paymentRequests: [...s.paymentRequests, newReq] }))
+    set(s => ({ paymentRequests: [...s.paymentRequests, newReq], approvalRecords: addApproval(s, '付款申请', newReq.id, '提交', `提交付款申请：¥${req.amount.toLocaleString()}`) }))
   },
   updateInvoiceMatch: (invoiceId, contractId) => {
     set(s => ({
       invoices: s.invoices.map(inv =>
         inv.id === invoiceId
-          ? { ...inv, matchedStatus: contractId ? '已匹配' as const : '未匹配' as const }
+          ? { ...inv, matchedStatus: contractId ? '已匹配' as const : '未匹配' as const, contractId: contractId || inv.contractId }
           : inv
       ),
     }))
@@ -546,6 +682,50 @@ export const useStore = create<StoreState>((set, get) => ({
           ? { ...eq, status: '已归还' as const, rentalEnd: returnDate }
           : eq
       ),
+    }))
+  },
+  approvePurchaseRequest: (id) => {
+    set(s => ({
+      purchaseRequests: s.purchaseRequests.map(r =>
+        r.id === id ? { ...r, status: '已采购' as const, approvedBy: s.currentRole } : r
+      ),
+      approvalRecords: addApproval(s, '采购申请', id, '审批通过', '审批通过，进入采购流程'),
+    }))
+  },
+  rejectPurchaseRequest: (id, comment) => {
+    set(s => ({
+      purchaseRequests: s.purchaseRequests.map(r =>
+        r.id === id ? { ...r, status: '已驳回' as const, approvedBy: s.currentRole } : r
+      ),
+      approvalRecords: addApproval(s, '采购申请', id, '驳回', comment || '审批驳回'),
+    }))
+  },
+  approvePaymentRequest: (id) => {
+    const payment = get().paymentRequests.find(p => p.id === id)
+    set(s => ({
+      paymentRequests: s.paymentRequests.map(p =>
+        p.id === id ? { ...p, status: '已审批' as const } : p
+      ),
+      contracts: payment ? s.contracts.map(c =>
+        c.id === payment.contractId ? { ...c, paidAmount: c.paidAmount + payment.amount } : c
+      ) : s.contracts,
+      approvalRecords: addApproval(s, '付款申请', id, '审批通过', `审批通过，付款金额 ¥${payment?.amount.toLocaleString() || 0}`),
+    }))
+  },
+  rejectPaymentRequest: (id, comment) => {
+    set(s => ({
+      paymentRequests: s.paymentRequests.map(p =>
+        p.id === id ? { ...p, status: '已驳回' as const } : p
+      ),
+      approvalRecords: addApproval(s, '付款申请', id, '驳回', comment || '审批驳回'),
+    }))
+  },
+  approveWarehouseIssue: (id) => {
+    set(s => ({
+      warehouseIssues: s.warehouseIssues.map(w =>
+        w.id === id ? { ...w, status: '已出库' as const } : w
+      ),
+      approvalRecords: addApproval(s, '出库审核', id, '审批通过', '审核通过，准予出库'),
     }))
   },
 }))

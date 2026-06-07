@@ -1,6 +1,6 @@
-import useStore, { WarehouseIssue, SubcontractorSign, MaterialReturn, LossRecord, EquipmentRental } from '@/store/useStore'
+import useStore, { useDerived, WarehouseIssue, SubcontractorSign, MaterialReturn, LossRecord, EquipmentRental, InventoryItem, InventoryTransaction } from '@/store/useStore'
 import { useState } from 'react'
-import { Package, PenLine, RotateCcw, AlertTriangle, Wrench, X, Calendar } from 'lucide-react'
+import { Package, PenLine, RotateCcw, AlertTriangle, Wrench, X, Calendar, Warehouse } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const tabs = [
@@ -9,6 +9,7 @@ const tabs = [
   { key: 'return', label: '剩余料退库', icon: RotateCcw },
   { key: 'loss', label: '损耗登记', icon: AlertTriangle },
   { key: 'rental', label: '租赁设备归还', icon: Wrench },
+  { key: 'inventory', label: '库存明细', icon: Warehouse },
 ] as const
 
 type TabKey = (typeof tabs)[number]['key']
@@ -38,7 +39,7 @@ const thCls = 'px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide
 const tdCls = 'px-4 py-3 text-sm text-slate-700 border-b border-slate-100'
 
 function WarehouseTab({ data }: { data: WarehouseIssue[] }) {
-  const [items, setItems] = useState(data)
+  const { approveWarehouseIssue } = useStore()
   return (
     <table className="w-full">
       <thead>
@@ -53,7 +54,7 @@ function WarehouseTab({ data }: { data: WarehouseIssue[] }) {
         </tr>
       </thead>
       <tbody>
-        {items.map((r) => (
+        {data.map((r) => (
           <tr key={r.id} className="hover:bg-slate-50/60 transition-colors">
             <td className={tdCls}>{r.id}</td>
             <td className={tdCls}>{r.subcontractorName}</td>
@@ -64,11 +65,7 @@ function WarehouseTab({ data }: { data: WarehouseIssue[] }) {
             <td className={tdCls}>
               {r.status === '待审核' && (
                 <button
-                  onClick={() =>
-                    setItems((prev) =>
-                      prev.map((i) => (i.id === r.id ? { ...i, status: '已出库' as const } : i))
-                    )
-                  }
+                  onClick={() => approveWarehouseIssue(r.id)}
                   className="px-3 py-1 text-xs rounded bg-[#1B3A5C] text-white hover:bg-[#2a4f7a] transition-colors"
                 >
                   审核
@@ -329,6 +326,98 @@ function RentalTab({ data }: { data: EquipmentRental[] }) {
   )
 }
 
+function InventoryTab() {
+  const { inventoryItems, inventoryTransactions } = useDerived()
+  const totalMaterials = inventoryItems.length
+  const totalInbound = inventoryItems.reduce((a, i) => a + i.inboundQty, 0)
+  const totalOutbound = inventoryItems.reduce((a, i) => a + i.outboundQty, 0)
+  const totalCurrent = inventoryItems.reduce((a, i) => a + i.currentQty, 0)
+  const recentTransactions = inventoryTransactions.slice(0, 10)
+
+  const transactionBadge = (type: InventoryTransaction['type']) => {
+    if (type === '验收入库') return badge(type, 'bg-green-600')
+    if (type === '领料出库') return badge(type, 'bg-blue-600')
+    if (type === '退库入库') return badge(type, 'bg-orange-500')
+    return badge(type, 'bg-gray-500')
+  }
+
+  const summaryCards = [
+    { label: '材料种类', value: totalMaterials, color: 'text-[#1B3A5C]' },
+    { label: '总入库量', value: totalInbound, color: 'text-green-600' },
+    { label: '总出库量', value: totalOutbound, color: 'text-blue-600' },
+    { label: '当前库存', value: totalCurrent, color: totalCurrent < 0 ? 'text-red-600' : 'text-[#E67E22]' },
+  ]
+
+  return (
+    <div className="p-5 space-y-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {summaryCards.map((card) => (
+          <div key={card.label} className="bg-slate-50 rounded-lg p-4 border border-slate-100">
+            <div className="text-xs text-slate-500 mb-1">{card.label}</div>
+            <div className={cn('text-xl font-bold', card.color)}>{card.value.toLocaleString()}</div>
+          </div>
+        ))}
+      </div>
+
+      <div>
+        <h3 className="text-sm font-semibold text-[#1B3A5C] mb-3">库存汇总</h3>
+        <table className="w-full">
+          <thead>
+            <tr className="bg-slate-50">
+              <th className={thCls}>材料名称</th>
+              <th className={thCls}>单位</th>
+              <th className={thCls}>入库量</th>
+              <th className={thCls}>出库量</th>
+              <th className={thCls}>退库量</th>
+              <th className={thCls}>当前余量</th>
+            </tr>
+          </thead>
+          <tbody>
+            {inventoryItems.map((item) => (
+              <tr key={item.materialName} className="hover:bg-slate-50/60 transition-colors">
+                <td className={tdCls}>{item.materialName}</td>
+                <td className={tdCls}>{item.unit}</td>
+                <td className={tdCls}>{item.inboundQty.toLocaleString()}</td>
+                <td className={tdCls}>{item.outboundQty.toLocaleString()}</td>
+                <td className={tdCls}>{item.returnQty.toLocaleString()}</td>
+                <td className={cn(tdCls, item.currentQty < 0 && 'text-red-600 font-semibold')}>
+                  {item.currentQty.toLocaleString()}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div>
+        <h3 className="text-sm font-semibold text-[#1B3A5C] mb-3">最近交易</h3>
+        <table className="w-full">
+          <thead>
+            <tr className="bg-slate-50">
+              <th className={thCls}>日期</th>
+              <th className={thCls}>类型</th>
+              <th className={thCls}>材料名称</th>
+              <th className={thCls}>数量</th>
+              <th className={thCls}>关联单号</th>
+            </tr>
+          </thead>
+          <tbody>
+            {recentTransactions.map((tx) => (
+              <tr key={tx.id} className="hover:bg-slate-50/60 transition-colors">
+                <td className={tdCls}>{tx.date}</td>
+                <td className={tdCls}>{transactionBadge(tx.type)}</td>
+                <td className={tdCls}>{tx.materialName}</td>
+                <td className={tdCls}>{tx.qty.toLocaleString()}</td>
+                <td className={tdCls}>{tx.relatedId}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 export default function Material() {
   const [activeTab, setActiveTab] = useState<TabKey>('warehouse')
   const { warehouseIssues, subcontractorSigns, materialReturns, lossRecords, equipmentRentals } = useStore()
@@ -340,6 +429,7 @@ export default function Material() {
       case 'return': return <ReturnTab data={materialReturns} />
       case 'loss': return <LossTab data={lossRecords} />
       case 'rental': return <RentalTab data={equipmentRentals} />
+      case 'inventory': return <InventoryTab />
     }
   }
 
@@ -374,7 +464,7 @@ export default function Material() {
       </div>
 
       <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
-        {activeTab !== 'rental' ? (
+        {activeTab !== 'rental' && activeTab !== 'inventory' ? (
           <div className="overflow-x-auto">{renderContent()}</div>
         ) : (
           <div className="p-4">{renderContent()}</div>

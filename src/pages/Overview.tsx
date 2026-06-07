@@ -1,7 +1,9 @@
 import useStore, { useDerived } from '@/store/useStore'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
-import { Wallet, ShoppingCart, CheckCircle, RefreshCw, AlertTriangle, Clock, ArrowRight, ChevronRight } from 'lucide-react'
+import { Wallet, ShoppingCart, CheckCircle, RefreshCw, AlertTriangle, Clock, ArrowRight, ChevronRight, Check, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 
 const statusColors: Record<string, string> = {
   '施工中': 'bg-green-500',
@@ -20,13 +22,29 @@ const alertLevelColor: Record<string, string> = {
   '低': 'bg-yellow-400 text-gray-800',
 }
 
+const typeConfig: Record<string, { color: string; label: string }> = {
+  '采购审批': { color: 'bg-blue-500', label: '采购审批' },
+  '付款审批': { color: 'bg-amber-500', label: '付款审批' },
+  '出库审核': { color: 'bg-purple-500', label: '出库审核' },
+  '物资签收': { color: 'bg-teal-500', label: '物资签收' },
+}
+
+type FilterKey = '全部' | '采购审批' | '付款审批' | '出库审核' | '物资签收'
+
 export default function Overview() {
   const {
     projects, monthlyArrival, monthlyIssue, monthlyReturn,
-    purchaseRequests, warehouseIssues, subcontractorSigns, paymentRequests,
     priceAlerts,
+    approvePurchaseRequest, rejectPurchaseRequest,
+    approvePaymentRequest, rejectPaymentRequest,
+    approveWarehouseIssue,
   } = useStore()
-  const { budgetExecutionRate, purchaseCompletionRate, acceptancePassRate, inventoryTurnoverRate } = useDerived()
+  const {
+    budgetExecutionRate, purchaseCompletionRate, acceptancePassRate, inventoryTurnoverRate,
+    todoItems, pendingTodoCount, pendingPurchaseCount, pendingPaymentCount, pendingIssueCount, pendingSignCount,
+  } = useDerived()
+  const navigate = useNavigate()
+  const [filter, setFilter] = useState<FilterKey>('全部')
 
   const project = projects[0]
 
@@ -39,20 +57,15 @@ export default function Overview() {
 
   const budgetPercent = ((project.spentTotal / project.budgetTotal) * 100).toFixed(1)
 
-  const todoItems = [
-    ...purchaseRequests.filter(r => r.status === '待审批').map(r => ({
-      type: '采购审批', color: 'bg-blue-500', title: `${r.materialName} x${r.qty}`, date: r.createdAt,
-    })),
-    ...warehouseIssues.filter(w => w.status === '待审核').map(w => ({
-      type: '出库审核', color: 'bg-purple-500', title: `${w.materialName} → ${w.subcontractorName}`, date: w.issuedDate,
-    })),
-    ...subcontractorSigns.filter(s => s.status === '待签收').map(s => ({
-      type: '物资签收', color: 'bg-teal-500', title: `${s.materialName} → ${s.subcontractorName}`, date: s.signedDate || '—',
-    })),
-    ...paymentRequests.filter(p => p.status === '待审批').map(p => ({
-      type: '付款审批', color: 'bg-amber-500', title: p.reason, date: p.createdAt,
-    })),
-  ].slice(0, 6)
+  const filterCounts: Record<FilterKey, number> = {
+    '全部': pendingTodoCount,
+    '采购审批': pendingPurchaseCount,
+    '付款审批': pendingPaymentCount,
+    '出库审核': pendingIssueCount,
+    '物资签收': pendingSignCount,
+  }
+
+  const filtered = filter === '全部' ? todoItems : todoItems.filter(t => t.type === filter)
 
   const kpiCards = [
     { label: '预算执行率', value: budgetExecutionRate, icon: Wallet, color: '#1B3A5C' },
@@ -60,6 +73,33 @@ export default function Overview() {
     { label: '验收合格率', value: acceptancePassRate, icon: CheckCircle, color: '#27AE60' },
     { label: '库存周转率', value: inventoryTurnoverRate, icon: RefreshCw, color: '#8E44AD' },
   ]
+
+  const renderActions = (item: typeof todoItems[number]) => {
+    switch (item.type) {
+      case '采购审批':
+        return (
+          <div className="flex gap-1.5 shrink-0">
+            <button onClick={(e) => { e.stopPropagation(); approvePurchaseRequest(item.id) }} className="flex items-center gap-1 px-2 py-0.5 rounded text-xs text-white bg-green-500 hover:bg-green-600"><Check size={12} />通过</button>
+            <button onClick={(e) => { e.stopPropagation(); rejectPurchaseRequest(item.id, '驳回') }} className="flex items-center gap-1 px-2 py-0.5 rounded text-xs text-white bg-red-500 hover:bg-red-600"><X size={12} />驳回</button>
+          </div>
+        )
+      case '付款审批':
+        return (
+          <div className="flex gap-1.5 shrink-0">
+            <button onClick={(e) => { e.stopPropagation(); approvePaymentRequest(item.id) }} className="flex items-center gap-1 px-2 py-0.5 rounded text-xs text-white bg-green-500 hover:bg-green-600"><Check size={12} />通过</button>
+            <button onClick={(e) => { e.stopPropagation(); rejectPaymentRequest(item.id, '驳回') }} className="flex items-center gap-1 px-2 py-0.5 rounded text-xs text-white bg-red-500 hover:bg-red-600"><X size={12} />驳回</button>
+          </div>
+        )
+      case '出库审核':
+        return (
+          <button onClick={(e) => { e.stopPropagation(); approveWarehouseIssue(item.id) }} className="flex items-center gap-1 px-2 py-0.5 rounded text-xs text-white bg-green-500 hover:bg-green-600 shrink-0"><Check size={12} />审核</button>
+        )
+      case '物资签收':
+        return (
+          <button onClick={(e) => { e.stopPropagation(); navigate('/material') }} className="text-xs text-[#E67E22] hover:underline shrink-0">去签收</button>
+        )
+    }
+  }
 
   return (
     <div className="grid grid-cols-4 gap-4">
@@ -127,17 +167,32 @@ export default function Overview() {
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <h3 className="text-base font-semibold" style={{ color: '#1B3A5C' }}>待办事项</h3>
-            <span className="bg-red-500 text-white text-xs rounded-full px-2 py-0.5">{todoItems.length}</span>
+            <span className="bg-red-500 text-white text-xs rounded-full px-2 py-0.5">{pendingTodoCount}</span>
           </div>
           <ChevronRight size={16} className="text-gray-400" />
         </div>
+        <div className="flex gap-2 mb-3 flex-wrap">
+          {(Object.keys(filterCounts) as FilterKey[]).map(key => (
+            <button
+              key={key}
+              onClick={() => setFilter(key)}
+              className={cn(
+                'px-2.5 py-1 rounded-full text-xs font-medium transition-colors',
+                filter === key ? 'text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              )}
+              style={filter === key ? { background: '#E67E22' } : undefined}
+            >
+              {key}({filterCounts[key]})
+            </button>
+          ))}
+        </div>
         <div className="space-y-2">
-          {todoItems.map((item, i) => (
-            <div key={i} className="flex items-center gap-3 p-2 rounded hover:bg-gray-50 cursor-pointer transition-colors">
-              <span className={cn('text-xs px-2 py-0.5 rounded text-white', item.color)}>{item.type}</span>
+          {filtered.map((item) => (
+            <div key={item.id} onClick={() => navigate(item.path)} className="flex items-center gap-3 p-2 rounded hover:bg-gray-50 cursor-pointer transition-colors">
+              <span className={cn('text-xs px-2 py-0.5 rounded text-white shrink-0', typeConfig[item.type].color)}>{item.type}</span>
               <span className="text-sm flex-1 truncate" style={{ color: '#2C3E50' }}>{item.title}</span>
-              <span className="text-xs text-gray-400">{item.date}</span>
-              <ChevronRight size={14} className="text-gray-300" />
+              <span className="text-xs text-gray-400 shrink-0">{item.date}</span>
+              {renderActions(item)}
             </div>
           ))}
         </div>

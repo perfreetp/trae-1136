@@ -1,4 +1,4 @@
-import useStore from '@/store/useStore'
+import useStore, { useDerived } from '@/store/useStore'
 import { useState } from 'react'
 import {
   LineChart, Line, ComposedChart, Bar, PieChart, Pie, Cell,
@@ -27,12 +27,10 @@ const formatWan = (v: number) => (v / 10000).toFixed(1)
 
 export default function Cost() {
   const [activeTab, setActiveTab] = useState(0)
-  const { priceAlerts, costTrend, costByCategory, approvalRecords, documentArchives } = useStore()
+  const { priceAlerts, approvalRecords, documentArchives } = useStore()
+  const { costByCategory, costTrend, totalContractAmount, totalPaidAmount, totalPendingPayment } = useDerived()
   const [docCategory, setDocCategory] = useState('全部')
   const [docSearch, setDocSearch] = useState('')
-  const totalBudget = costTrend.reduce((s, c) => s + c.budget, 0)
-  const totalActual = costTrend.reduce((s, c) => s + c.actual, 0)
-  const balance = totalBudget - totalActual
   const avgPrice = Math.round(priceTrendData.reduce((s, d) => s + d['HRB400螺纹钢'], 0) / priceTrendData.length)
   const filteredDocs = documentArchives.filter(d =>
     (docCategory === '全部' || d.category === docCategory) &&
@@ -156,19 +154,20 @@ export default function Cost() {
               <h3 className="text-sm font-medium text-[#1B3A5C] mb-3">成本汇总</h3>
               <div className="space-y-3">
                 <div className="flex justify-between items-center">
-                  <span className="text-gray-500 text-sm">总预算</span>
-                  <span className="text-[#1B3A5C] font-semibold">{formatWan(totalBudget)}万元</span>
+                  <span className="text-gray-500 text-sm">合同总额</span>
+                  <span className="text-[#1B3A5C] font-semibold">{formatWan(totalContractAmount)}万元</span>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-gray-500 text-sm">实际支出</span>
-                  <span className="text-[#E67E22] font-semibold">{formatWan(totalActual)}万元</span>
+                  <span className="text-gray-500 text-sm">已付金额</span>
+                  <span className="text-[#E67E22] font-semibold">{formatWan(totalPaidAmount)}万元</span>
                 </div>
                 <div className="border-t pt-3 flex justify-between items-center">
-                  <span className="text-gray-500 text-sm">节余/超支</span>
-                  <span className={cn('font-semibold', balance >= 0 ? 'text-green-600' : 'text-red-600')}>
-                    {balance >= 0 ? '+' : ''}{formatWan(balance)}万元
+                  <span className="text-gray-500 text-sm">待付余额</span>
+                  <span className="text-[#E67E22] font-semibold">
+                    {formatWan(totalPendingPayment)}万元
                   </span>
                 </div>
+                <p className="text-xs text-gray-400 mt-2">数据随审批和付款实时更新</p>
               </div>
             </div>
           </div>

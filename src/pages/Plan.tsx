@@ -15,7 +15,7 @@ const statusColors: Record<string, string> = {
 const fmt = (n: number) => n.toLocaleString()
 
 export default function Plan() {
-  const { materialPlans, purchaseRequests, supplierQuotes, addPurchaseRequest } = useStore()
+  const { materialPlans, purchaseRequests, supplierQuotes, addPurchaseRequest, approvePurchaseRequest, rejectPurchaseRequest } = useStore()
   const [activeTab, setActiveTab] = useState(0)
   const [showModal, setShowModal] = useState(false)
   const [form, setForm] = useState({ materialName: '', qty: '' })
@@ -165,6 +165,7 @@ export default function Plan() {
                   <th className="px-4 py-3 text-center font-medium">状态</th>
                   <th className="px-4 py-3 text-left font-medium">申请日期</th>
                   <th className="px-4 py-3 text-left font-medium">审批人</th>
+                  <th className="px-4 py-3 text-center font-medium">操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -180,6 +181,24 @@ export default function Plan() {
                     </td>
                     <td className="px-4 py-3 text-gray-600">{r.createdAt}</td>
                     <td className="px-4 py-3 text-gray-600">{r.approvedBy || '—'}</td>
+                    <td className="px-4 py-3 text-center">
+                      {r.status === '待审批' ? (
+                        <div className="flex items-center justify-center gap-2">
+                          <button
+                            onClick={() => approvePurchaseRequest(r.id)}
+                            className="px-2 py-0.5 text-xs font-medium rounded bg-green-500 text-white hover:bg-green-600 transition-colors"
+                          >
+                            通过
+                          </button>
+                          <button
+                            onClick={() => rejectPurchaseRequest(r.id, '审批驳回')}
+                            className="px-2 py-0.5 text-xs font-medium rounded bg-red-500 text-white hover:bg-red-600 transition-colors"
+                          >
+                            驳回
+                          </button>
+                        </div>
+                      ) : '—'}
+                    </td>
                   </tr>
                 ))}
               </tbody>

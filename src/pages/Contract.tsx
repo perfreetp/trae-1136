@@ -24,16 +24,9 @@ const tabs = [
 type TabKey = (typeof tabs)[number]['key']
 
 export default function Contract() {
-  const { contracts, invoices, paymentRequests, addPaymentRequest, updateInvoiceMatch } = useStore()
+  const { contracts, invoices, paymentRequests, addPaymentRequest, updateInvoiceMatch, approvePaymentRequest, rejectPaymentRequest } = useStore()
   const [activeTab, setActiveTab] = useState<TabKey>('ledger')
   const [selectedInvoice, setSelectedInvoice] = useState<string | null>(null)
-  const [invoiceContractMap, setInvoiceContractMap] = useState<Record<string, string>>(() => {
-    const init: Record<string, string> = {}
-    invoices.forEach(inv => {
-      if (inv.matchedStatus === '已匹配') init[inv.id] = inv.contractId
-    })
-    return init
-  })
   const [showModal, setShowModal] = useState(false)
   const [form, setForm] = useState({ contractId: '', amount: '', reason: '' })
   const [formError, setFormError] = useState('')
@@ -45,21 +38,15 @@ export default function Contract() {
   const progressColor = (ratio: number) =>
     ratio > 0.8 ? 'bg-green-500' : ratio > 0.5 ? 'bg-blue-500' : 'bg-orange-500'
 
-  const unmatchedInvoices = invoices.filter(inv => !(inv.id in invoiceContractMap))
-  const matchedInvoices = invoices.filter(inv => inv.id in invoiceContractMap)
+  const unmatchedInvoices = invoices.filter(inv => inv.matchedStatus === '未匹配')
+  const matchedInvoices = invoices.filter(inv => inv.matchedStatus === '已匹配')
 
   const handleMatch = (invoiceId: string, contractId: string) => {
-    setInvoiceContractMap(prev => ({ ...prev, [invoiceId]: contractId }))
     updateInvoiceMatch(invoiceId, contractId)
     setSelectedInvoice(null)
   }
 
   const handleUnmatch = (invoiceId: string) => {
-    setInvoiceContractMap(prev => {
-      const next = { ...prev }
-      delete next[invoiceId]
-      return next
-    })
     updateInvoiceMatch(invoiceId, null)
   }
 
@@ -249,8 +236,7 @@ export default function Contract() {
                 </thead>
                 <tbody>
                   {matchedInvoices.map((inv) => {
-                    const contractId = invoiceContractMap[inv.id]
-                    const contract = contracts.find(c => c.id === contractId)
+                    const contract = contracts.find(c => c.id === inv.contractId)
                     return (
                       <tr key={inv.id} className="border-b border-gray-50">
                         <td className="py-2 font-mono text-xs">{inv.invoiceNo}</td>
@@ -298,6 +284,7 @@ export default function Contract() {
                   <th className="px-4 py-3 text-left font-medium">申请原因</th>
                   <th className="px-4 py-3 text-center font-medium">状态</th>
                   <th className="px-4 py-3 text-left font-medium">申请日期</th>
+                  <th className="px-4 py-3 text-center font-medium">操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -315,6 +302,24 @@ export default function Contract() {
                         </span>
                       </td>
                       <td className="px-4 py-3">{pr.createdAt}</td>
+                      <td className="px-4 py-3 text-center">
+                        {pr.status === '待审批' && (
+                          <div className="flex items-center justify-center gap-2">
+                            <button
+                              onClick={() => approvePaymentRequest(pr.id)}
+                              className="px-2 py-0.5 rounded text-xs font-medium bg-green-50 text-green-600 hover:bg-green-100"
+                            >
+                              通过
+                            </button>
+                            <button
+                              onClick={() => rejectPaymentRequest(pr.id, '审批驳回')}
+                              className="px-2 py-0.5 rounded text-xs font-medium bg-red-50 text-red-600 hover:bg-red-100"
+                            >
+                              驳回
+                            </button>
+                          </div>
+                        )}
+                      </td>
                     </tr>
                   )
                 })}
