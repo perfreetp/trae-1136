@@ -1,4 +1,4 @@
-import useStore from '@/store/useStore'
+import useStore, { useDerived } from '@/store/useStore'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { Wallet, ShoppingCart, CheckCircle, RefreshCw, AlertTriangle, Clock, ArrowRight, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -24,9 +24,9 @@ export default function Overview() {
   const {
     projects, monthlyArrival, monthlyIssue, monthlyReturn,
     purchaseRequests, warehouseIssues, subcontractorSigns, paymentRequests,
-    priceAlerts, budgetExecutionRate, purchaseCompletionRate,
-    acceptancePassRate, inventoryTurnoverRate,
+    priceAlerts,
   } = useStore()
+  const { budgetExecutionRate, purchaseCompletionRate, acceptancePassRate, inventoryTurnoverRate } = useDerived()
 
   const project = projects[0]
 

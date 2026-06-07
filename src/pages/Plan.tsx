@@ -15,10 +15,11 @@ const statusColors: Record<string, string> = {
 const fmt = (n: number) => n.toLocaleString()
 
 export default function Plan() {
-  const { materialPlans, purchaseRequests, supplierQuotes } = useStore()
+  const { materialPlans, purchaseRequests, supplierQuotes, addPurchaseRequest } = useStore()
   const [activeTab, setActiveTab] = useState(0)
   const [showModal, setShowModal] = useState(false)
   const [form, setForm] = useState({ materialName: '', qty: '' })
+  const [formError, setFormError] = useState('')
 
   const groupedQuotes = supplierQuotes.reduce<Record<string, typeof supplierQuotes>>((acc, q) => {
     ;(acc[q.requestId] ??= []).push(q)
@@ -190,38 +191,49 @@ export default function Plan() {
               <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 space-y-5">
                 <div className="flex items-center justify-between">
                   <h3 className="text-lg font-bold text-[#1B3A5C]">新建采购申请</h3>
-                  <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600">
+                  <button onClick={() => { setShowModal(false); setFormError('') }} className="text-gray-400 hover:text-gray-600">
                     <X className="w-5 h-5" />
                   </button>
                 </div>
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">材料名称</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">材料名称 <span className="text-red-500">*</span></label>
                     <input
                       value={form.materialName}
-                      onChange={(e) => setForm({ ...form, materialName: e.target.value })}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E67E22]"
+                      onChange={(e) => { setForm({ ...form, materialName: e.target.value }); setFormError('') }}
+                      className={cn('w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E67E22]', formError && !form.materialName ? 'border-red-400' : 'border-gray-300')}
+                      placeholder="请输入材料名称"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">数量</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">数量 <span className="text-red-500">*</span></label>
                     <input
                       type="number"
                       value={form.qty}
-                      onChange={(e) => setForm({ ...form, qty: e.target.value })}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E67E22]"
+                      onChange={(e) => { setForm({ ...form, qty: e.target.value }); setFormError('') }}
+                      className={cn('w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#E67E22]', formError && !form.qty ? 'border-red-400' : 'border-gray-300')}
+                      placeholder="请输入数量"
                     />
                   </div>
+                  {formError && <p className="text-red-500 text-xs">{formError}</p>}
                 </div>
                 <div className="flex justify-end gap-3 pt-2">
                   <button
-                    onClick={() => setShowModal(false)}
+                    onClick={() => { setShowModal(false); setFormError('') }}
                     className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
                   >
                     取消
                   </button>
                   <button
-                    onClick={() => setShowModal(false)}
+                    onClick={() => {
+                      if (!form.materialName.trim()) { setFormError('请填写材料名称'); return }
+                      const qty = Number(form.qty)
+                      if (!form.qty || isNaN(qty) || qty <= 0) { setFormError('请填写有效数量'); return }
+                      addPurchaseRequest({ projectId: 'P001', planId: '', materialName: form.materialName.trim(), qty })
+                      setForm({ materialName: '', qty: '' })
+                      setFormError('')
+                      setShowModal(false)
+                    }}
                     className="flex items-center gap-1.5 px-4 py-2 text-sm text-white bg-[#1B3A5C] rounded-lg hover:bg-[#142d49]"
                   >
                     <FileCheck className="w-4 h-4" />

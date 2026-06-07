@@ -1,6 +1,6 @@
 import useStore, { WarehouseIssue, SubcontractorSign, MaterialReturn, LossRecord, EquipmentRental } from '@/store/useStore'
 import { useState } from 'react'
-import { Package, PenLine, RotateCcw, AlertTriangle, Wrench } from 'lucide-react'
+import { Package, PenLine, RotateCcw, AlertTriangle, Wrench, X, Calendar } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const tabs = [
@@ -83,35 +83,86 @@ function WarehouseTab({ data }: { data: WarehouseIssue[] }) {
 }
 
 function SignTab({ data }: { data: SubcontractorSign[] }) {
+  const { signSubcontractor } = useStore()
+  const [signingId, setSigningId] = useState<string | null>(null)
+  const [signQty, setSignQty] = useState('')
+
+  const handleSign = (id: string) => {
+    const qty = Number(signQty)
+    if (!signQty || isNaN(qty) || qty <= 0) return
+    signSubcontractor(id, qty)
+    setSigningId(null)
+    setSignQty('')
+  }
+
   return (
-    <table className="w-full">
-      <thead>
-        <tr className="bg-slate-50">
-          <th className={thCls}>签收单号</th>
-          <th className={thCls}>分包队伍</th>
-          <th className={thCls}>材料名称</th>
-          <th className={thCls}>签收数量</th>
-          <th className={thCls}>签收日期</th>
-          <th className={thCls}>状态</th>
-        </tr>
-      </thead>
-      <tbody>
-        {data.map((r) => (
-          <tr key={r.id} className={cn('hover:bg-slate-50/60 transition-colors', r.status === '待签收' && 'font-semibold')}>
-            <td className={tdCls}>{r.id}</td>
-            <td className={tdCls}>{r.subcontractorName}</td>
-            <td className={tdCls}>{r.materialName}</td>
-            <td className={tdCls}>{r.signedQty || '-'}</td>
-            <td className={tdCls}>{r.signedDate || '-'}</td>
-            <td className={tdCls}>{statusBadge(r.status)}</td>
+    <>
+      <table className="w-full">
+        <thead>
+          <tr className="bg-slate-50">
+            <th className={thCls}>签收单号</th>
+            <th className={thCls}>分包队伍</th>
+            <th className={thCls}>材料名称</th>
+            <th className={thCls}>签收数量</th>
+            <th className={thCls}>签收日期</th>
+            <th className={thCls}>状态</th>
+            <th className={thCls}>操作</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {data.map((r) => (
+            <tr key={r.id} className={cn('hover:bg-slate-50/60 transition-colors', r.status === '待签收' && 'font-semibold')}>
+              <td className={tdCls}>{r.id}</td>
+              <td className={tdCls}>{r.subcontractorName}</td>
+              <td className={tdCls}>{r.materialName}</td>
+              <td className={tdCls}>{r.signedQty || '-'}</td>
+              <td className={tdCls}>{r.signedDate || '-'}</td>
+              <td className={tdCls}>{statusBadge(r.status)}</td>
+              <td className={tdCls}>
+                {r.status === '待签收' && signingId !== r.id && (
+                  <button
+                    onClick={() => { setSigningId(r.id); setSignQty('') }}
+                    className="px-3 py-1 text-xs rounded bg-[#E67E22] text-white hover:bg-[#d35400] transition-colors"
+                  >
+                    签收
+                  </button>
+                )}
+                {r.status === '待签收' && signingId === r.id && (
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      value={signQty}
+                      onChange={e => setSignQty(e.target.value)}
+                      placeholder="数量"
+                      className="w-16 border border-gray-300 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#E67E22]"
+                      autoFocus
+                    />
+                    <button
+                      onClick={() => handleSign(r.id)}
+                      className="px-2 py-0.5 text-xs rounded bg-green-600 text-white hover:bg-green-700"
+                    >
+                      确认
+                    </button>
+                    <button
+                      onClick={() => { setSigningId(null); setSignQty('') }}
+                      className="px-2 py-0.5 text-xs rounded bg-gray-300 text-gray-600 hover:bg-gray-400"
+                    >
+                      取消
+                    </button>
+                  </div>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </>
   )
 }
 
 function ReturnTab({ data }: { data: MaterialReturn[] }) {
+  const { acceptMaterialReturn } = useStore()
+
   return (
     <table className="w-full">
       <thead>
@@ -122,6 +173,7 @@ function ReturnTab({ data }: { data: MaterialReturn[] }) {
           <th className={thCls}>退库原因</th>
           <th className={thCls}>退库日期</th>
           <th className={thCls}>状态</th>
+          <th className={thCls}>操作</th>
         </tr>
       </thead>
       <tbody>
@@ -133,6 +185,16 @@ function ReturnTab({ data }: { data: MaterialReturn[] }) {
             <td className={tdCls}>{r.reason}</td>
             <td className={tdCls}>{r.returnDate}</td>
             <td className={tdCls}>{statusBadge(r.status)}</td>
+            <td className={tdCls}>
+              {r.status === '待验收' && (
+                <button
+                  onClick={() => acceptMaterialReturn(r.id)}
+                  className="px-3 py-1 text-xs rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
+                >
+                  验收
+                </button>
+              )}
+            </td>
           </tr>
         ))}
       </tbody>
@@ -170,15 +232,28 @@ function LossTab({ data }: { data: LossRecord[] }) {
 }
 
 function RentalTab({ data }: { data: EquipmentRental[] }) {
+  const { returnEquipment } = useStore()
+  const [returningId, setReturningId] = useState<string | null>(null)
+  const [returnDate, setReturnDate] = useState('')
+
+  const handleReturn = (id: string) => {
+    if (!returnDate) return
+    returnEquipment(id, returnDate)
+    setReturningId(null)
+    setReturnDate('')
+  }
+
   const calcDays = (start: string, end: string, status: string) => {
     const s = new Date(start)
     const e = status === '在租' || status === '逾期未还' ? new Date() : new Date(end)
     return Math.max(1, Math.ceil((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24)))
   }
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
       {data.map((r) => {
         const days = calcDays(r.rentalStart, r.rentalEnd, r.status)
+        const canReturn = r.status === '在租' || r.status === '逾期未还'
         return (
           <div
             key={r.id}
@@ -209,6 +284,44 @@ function RentalTab({ data }: { data: EquipmentRental[] }) {
                 <span className="font-bold text-[#E67E22]">¥{(days * r.dailyRate).toLocaleString()}</span>
               </div>
             </div>
+            {canReturn && returningId !== r.id && (
+              <button
+                onClick={() => { setReturningId(r.id); setReturnDate(new Date().toISOString().slice(0, 10)) }}
+                className="mt-3 w-full px-3 py-2 text-xs rounded bg-[#1B3A5C] text-white hover:bg-[#2a4f7a] transition-colors flex items-center justify-center gap-1"
+              >
+                <Calendar className="w-3.5 h-3.5" />
+                办理归还
+              </button>
+            )}
+            {canReturn && returningId === r.id && (
+              <div className="mt-3 space-y-2 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                <label className="block text-xs text-slate-600">归还日期</label>
+                <input
+                  type="date"
+                  value={returnDate}
+                  onChange={e => setReturnDate(e.target.value)}
+                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-[#E67E22]"
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleReturn(r.id)}
+                    disabled={!returnDate}
+                    className={cn(
+                      'flex-1 px-2 py-1.5 text-xs rounded font-medium transition-colors',
+                      returnDate ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                    )}
+                  >
+                    确认归还
+                  </button>
+                  <button
+                    onClick={() => { setReturningId(null); setReturnDate('') }}
+                    className="px-2 py-1.5 text-xs rounded bg-gray-200 text-gray-600 hover:bg-gray-300"
+                  >
+                    取消
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )
       })}

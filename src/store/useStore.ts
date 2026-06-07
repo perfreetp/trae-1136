@@ -431,65 +431,128 @@ interface StoreState {
   monthlyReturn: MonthlyStat[]
   costByCategory: CostByCategory[]
   costTrend: CostTrend[]
-  pendingTodoCount: number
-  budgetExecutionRate: number
-  purchaseCompletionRate: number
-  acceptancePassRate: number
-  inventoryTurnoverRate: number
   currentRole: string
   setCurrentRole: (role: string) => void
   sidebarCollapsed: boolean
   setSidebarCollapsed: (collapsed: boolean) => void
+  addPurchaseRequest: (req: Omit<PurchaseRequest, 'id' | 'status' | 'createdAt' | 'approvedBy'>) => void
+  addPaymentRequest: (req: Omit<PaymentRequest, 'id' | 'status' | 'createdAt'>) => void
+  updateInvoiceMatch: (invoiceId: string, contractId: string | null) => void
+  signSubcontractor: (id: string, qty: number) => void
+  acceptMaterialReturn: (id: string) => void
+  returnEquipment: (id: string, returnDate: string) => void
 }
 
-export const useStore = create<StoreState>((set) => {
-  const totalBudget = projects.reduce((s, p) => s + p.budgetTotal, 0)
-  const totalSpent = projects.reduce((s, p) => s + p.spentTotal, 0)
-  const totalPlanned = materialPlans.reduce((s, m) => s + m.plannedQty, 0)
-  const totalPurchased = materialPlans.reduce((s, m) => s + m.purchasedQty, 0)
-  const totalOrdered = siteAcceptances.reduce((s, a) => s + a.orderedQty, 0)
-  const totalQualified = siteAcceptances.reduce((s, a) => s + a.qualifiedQty, 0)
-  const totalIssued = warehouseIssues.reduce((s, w) => s + w.issuedQty, 0)
-  const totalUsed = materialPlans.reduce((s, m) => s + m.usedQty, 0)
-
-  const pendingRequests = purchaseRequests.filter(r => r.status === '待审批').length
-  const pendingPayments = paymentRequests.filter(r => r.status === '待审批').length
-  const pendingIssues = warehouseIssues.filter(w => w.status === '待审核').length
-  const pendingSigns = subcontractorSigns.filter(s => s.status === '待签收').length
-
+const computeDerived = (s: StoreState) => {
+  const totalBudget = s.projects.reduce((a, p) => a + p.budgetTotal, 0)
+  const totalSpent = s.projects.reduce((a, p) => a + p.spentTotal, 0)
+  const totalPlanned = s.materialPlans.reduce((a, m) => a + m.plannedQty, 0)
+  const totalPurchased = s.materialPlans.reduce((a, m) => a + m.purchasedQty, 0)
+  const totalOrdered = s.siteAcceptances.reduce((a, x) => a + x.orderedQty, 0)
+  const totalQualified = s.siteAcceptances.reduce((a, x) => a + x.qualifiedQty, 0)
+  const totalIssued = s.warehouseIssues.reduce((a, w) => a + w.issuedQty, 0)
+  const totalUsed = s.materialPlans.reduce((a, m) => a + m.usedQty, 0)
+  const pendingRequests = s.purchaseRequests.filter(r => r.status === '待审批').length
+  const pendingPayments = s.paymentRequests.filter(r => r.status === '待审批').length
+  const pendingIssues = s.warehouseIssues.filter(w => w.status === '待审核').length
+  const pendingSigns = s.subcontractorSigns.filter(x => x.status === '待签收').length
   return {
-    projects,
-    materialPlans,
-    purchaseRequests,
-    supplierQuotes,
-    contracts,
-    arrivalAppointments,
-    siteAcceptances,
-    warehouseIssues,
-    subcontractorSigns,
-    materialReturns,
-    lossRecords,
-    equipmentRentals,
-    invoices,
-    paymentRequests,
-    approvalRecords,
-    priceAlerts,
-    documentArchives,
-    monthlyArrival,
-    monthlyIssue,
-    monthlyReturn,
-    costByCategory,
-    costTrend,
     pendingTodoCount: pendingRequests + pendingPayments + pendingIssues + pendingSigns,
-    budgetExecutionRate: Number(((totalSpent / totalBudget) * 100).toFixed(1)),
-    purchaseCompletionRate: Number(((totalPurchased / totalPlanned) * 100).toFixed(1)),
-    acceptancePassRate: Number(((totalQualified / totalOrdered) * 100).toFixed(1)),
-    inventoryTurnoverRate: Number(((totalUsed / totalIssued) * 100).toFixed(1)),
-    currentRole: '物资经理',
-    setCurrentRole: (role: string) => set({ currentRole: role }),
-    sidebarCollapsed: false,
-    setSidebarCollapsed: (collapsed: boolean) => set({ sidebarCollapsed: collapsed }),
+    budgetExecutionRate: totalBudget > 0 ? Number(((totalSpent / totalBudget) * 100).toFixed(1)) : 0,
+    purchaseCompletionRate: totalPlanned > 0 ? Number(((totalPurchased / totalPlanned) * 100).toFixed(1)) : 0,
+    acceptancePassRate: totalOrdered > 0 ? Number(((totalQualified / totalOrdered) * 100).toFixed(1)) : 0,
+    inventoryTurnoverRate: totalIssued > 0 ? Number(((totalUsed / totalIssued) * 100).toFixed(1)) : 0,
   }
-})
+}
+
+let idCounter = 1000
+const nextId = (prefix: string) => `${prefix}${String(++idCounter)}`
+
+export const useStore = create<StoreState>((set, get) => ({
+  projects,
+  materialPlans,
+  purchaseRequests,
+  supplierQuotes,
+  contracts,
+  arrivalAppointments,
+  siteAcceptances,
+  warehouseIssues,
+  subcontractorSigns,
+  materialReturns,
+  lossRecords,
+  equipmentRentals,
+  invoices,
+  paymentRequests,
+  approvalRecords,
+  priceAlerts,
+  documentArchives,
+  monthlyArrival,
+  monthlyIssue,
+  monthlyReturn,
+  costByCategory,
+  costTrend,
+  currentRole: '物资经理',
+  setCurrentRole: (role: string) => set({ currentRole: role }),
+  sidebarCollapsed: false,
+  setSidebarCollapsed: (collapsed: boolean) => set({ sidebarCollapsed: collapsed }),
+  addPurchaseRequest: (req) => {
+    const newReq: PurchaseRequest = {
+      ...req,
+      id: nextId('PR'),
+      status: '待审批',
+      createdAt: new Date().toISOString().slice(0, 10),
+      approvedBy: '',
+    }
+    set(s => ({ purchaseRequests: [...s.purchaseRequests, newReq] }))
+  },
+  addPaymentRequest: (req) => {
+    const newReq: PaymentRequest = {
+      ...req,
+      id: nextId('PY'),
+      status: '待审批',
+      createdAt: new Date().toISOString().slice(0, 10),
+    }
+    set(s => ({ paymentRequests: [...s.paymentRequests, newReq] }))
+  },
+  updateInvoiceMatch: (invoiceId, contractId) => {
+    set(s => ({
+      invoices: s.invoices.map(inv =>
+        inv.id === invoiceId
+          ? { ...inv, matchedStatus: contractId ? '已匹配' as const : '未匹配' as const }
+          : inv
+      ),
+    }))
+  },
+  signSubcontractor: (id, qty) => {
+    set(s => ({
+      subcontractorSigns: s.subcontractorSigns.map(sign =>
+        sign.id === id
+          ? { ...sign, status: '已签收' as const, signedQty: qty, signedDate: new Date().toISOString().slice(0, 10) }
+          : sign
+      ),
+    }))
+  },
+  acceptMaterialReturn: (id) => {
+    set(s => ({
+      materialReturns: s.materialReturns.map(ret =>
+        ret.id === id ? { ...ret, status: '已入库' as const } : ret
+      ),
+    }))
+  },
+  returnEquipment: (id, returnDate) => {
+    set(s => ({
+      equipmentRentals: s.equipmentRentals.map(eq =>
+        eq.id === id
+          ? { ...eq, status: '已归还' as const, rentalEnd: returnDate }
+          : eq
+      ),
+    }))
+  },
+}))
+
+export function useDerived() {
+  const state = useStore()
+  return computeDerived(state)
+}
 
 export default useStore

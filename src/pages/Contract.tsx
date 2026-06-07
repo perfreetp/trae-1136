@@ -24,12 +24,19 @@ const tabs = [
 type TabKey = (typeof tabs)[number]['key']
 
 export default function Contract() {
-  const { contracts, invoices, paymentRequests } = useStore()
+  const { contracts, invoices, paymentRequests, addPaymentRequest, updateInvoiceMatch } = useStore()
   const [activeTab, setActiveTab] = useState<TabKey>('ledger')
   const [selectedInvoice, setSelectedInvoice] = useState<string | null>(null)
-  const [matchedRecords, setMatchedRecords] = useState<{ invoiceId: string; contractId: string }[]>([])
+  const [invoiceContractMap, setInvoiceContractMap] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {}
+    invoices.forEach(inv => {
+      if (inv.matchedStatus === '已匹配') init[inv.id] = inv.contractId
+    })
+    return init
+  })
   const [showModal, setShowModal] = useState(false)
   const [form, setForm] = useState({ contractId: '', amount: '', reason: '' })
+  const [formError, setFormError] = useState('')
 
   const totalAmount = contracts.reduce((s, c) => s + c.amount, 0)
   const totalPaid = contracts.reduce((s, c) => s + c.paidAmount, 0)
@@ -38,27 +45,22 @@ export default function Contract() {
   const progressColor = (ratio: number) =>
     ratio > 0.8 ? 'bg-green-500' : ratio > 0.5 ? 'bg-blue-500' : 'bg-orange-500'
 
-  const unmatchedInvoices = invoices.filter((inv) => {
-    if (inv.matchedStatus !== '未匹配') return false
-    return !matchedRecords.some((m) => m.invoiceId === inv.id)
-  })
-
-  const matchedInvoices = invoices.filter((inv) =>
-    matchedRecords.some((m) => m.invoiceId === inv.id)
-  )
+  const unmatchedInvoices = invoices.filter(inv => !(inv.id in invoiceContractMap))
+  const matchedInvoices = invoices.filter(inv => inv.id in invoiceContractMap)
 
   const handleMatch = (invoiceId: string, contractId: string) => {
-    setMatchedRecords((prev) => [...prev, { invoiceId, contractId }])
+    setInvoiceContractMap(prev => ({ ...prev, [invoiceId]: contractId }))
+    updateInvoiceMatch(invoiceId, contractId)
     setSelectedInvoice(null)
   }
 
   const handleUnmatch = (invoiceId: string) => {
-    setMatchedRecords((prev) => prev.filter((m) => m.invoiceId !== invoiceId))
-  }
-
-  const handleSubmitPayment = () => {
-    setShowModal(false)
-    setForm({ contractId: '', amount: '', reason: '' })
+    setInvoiceContractMap(prev => {
+      const next = { ...prev }
+      delete next[invoiceId]
+      return next
+    })
+    updateInvoiceMatch(invoiceId, null)
   }
 
   return (
@@ -210,9 +212,7 @@ export default function Contract() {
                       <td className="py-2 text-right text-xs">{fmt(c.amount)}</td>
                       <td className="py-2 text-center">
                         <button
-                          onClick={() =>
-                            selectedInvoice && handleMatch(selectedInvoice, c.id)
-                          }
+                          onClick={() => selectedInvoice && handleMatch(selectedInvoice, c.id)}
                           disabled={!selectedInvoice}
                           className={cn(
                             'px-2 py-0.5 rounded text-xs font-medium transition-colors',
@@ -249,8 +249,8 @@ export default function Contract() {
                 </thead>
                 <tbody>
                   {matchedInvoices.map((inv) => {
-                    const match = matchedRecords.find((m) => m.invoiceId === inv.id)
-                    const contract = contracts.find((c) => c.id === match?.contractId)
+                    const contractId = invoiceContractMap[inv.id]
+                    const contract = contracts.find(c => c.id === contractId)
                     return (
                       <tr key={inv.id} className="border-b border-gray-50">
                         <td className="py-2 font-mono text-xs">{inv.invoiceNo}</td>
@@ -329,17 +329,17 @@ export default function Contract() {
           <div className="bg-white rounded-lg shadow-xl w-[440px] p-6 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-semibold text-[#1B3A5C]">新建付款申请</h3>
-              <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600">
+              <button onClick={() => { setShowModal(false); setFormError('') }} className="text-gray-400 hover:text-gray-600">
                 <X className="w-5 h-5" />
               </button>
             </div>
             <div className="space-y-3">
               <div>
-                <label className="block text-sm text-gray-600 mb-1">关联合同</label>
+                <label className="block text-sm text-gray-600 mb-1">关联合同 <span className="text-red-500">*</span></label>
                 <select
                   value={form.contractId}
-                  onChange={(e) => setForm({ ...form, contractId: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1B3A5C]"
+                  onChange={(e) => { setForm({ ...form, contractId: e.target.value }); setFormError('') }}
+                  className={cn('w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1B3A5C]', formError && !form.contractId ? 'border-red-400' : 'border-gray-300')}
                 >
                   <option value="">请选择合同</option>
                   {contracts.map((c) => (
@@ -350,35 +350,45 @@ export default function Contract() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm text-gray-600 mb-1">申请金额(元)</label>
+                <label className="block text-sm text-gray-600 mb-1">申请金额(元) <span className="text-red-500">*</span></label>
                 <input
                   type="number"
                   value={form.amount}
-                  onChange={(e) => setForm({ ...form, amount: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1B3A5C]"
+                  onChange={(e) => { setForm({ ...form, amount: e.target.value }); setFormError('') }}
+                  className={cn('w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1B3A5C]', formError && !form.amount ? 'border-red-400' : 'border-gray-300')}
                   placeholder="请输入金额"
                 />
               </div>
               <div>
-                <label className="block text-sm text-gray-600 mb-1">申请原因</label>
+                <label className="block text-sm text-gray-600 mb-1">申请原因 <span className="text-red-500">*</span></label>
                 <textarea
                   value={form.reason}
-                  onChange={(e) => setForm({ ...form, reason: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1B3A5C] resize-none"
+                  onChange={(e) => { setForm({ ...form, reason: e.target.value }); setFormError('') }}
+                  className={cn('w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1B3A5C] resize-none', formError && !form.reason ? 'border-red-400' : 'border-gray-300')}
                   rows={3}
                   placeholder="请输入申请原因"
                 />
               </div>
+              {formError && <p className="text-red-500 text-xs">{formError}</p>}
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <button
-                onClick={() => setShowModal(false)}
+                onClick={() => { setShowModal(false); setFormError('') }}
                 className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
               >
                 取消
               </button>
               <button
-                onClick={handleSubmitPayment}
+                onClick={() => {
+                  if (!form.contractId) { setFormError('请选择关联合同'); return }
+                  const amount = Number(form.amount)
+                  if (!form.amount || isNaN(amount) || amount <= 0) { setFormError('请填写有效金额'); return }
+                  if (!form.reason.trim()) { setFormError('请填写申请原因'); return }
+                  addPaymentRequest({ contractId: form.contractId, amount, reason: form.reason.trim() })
+                  setForm({ contractId: '', amount: '', reason: '' })
+                  setFormError('')
+                  setShowModal(false)
+                }}
                 className="px-4 py-2 text-sm text-white bg-[#1B3A5C] rounded-lg hover:bg-[#2a4f7a]"
               >
                 提交
