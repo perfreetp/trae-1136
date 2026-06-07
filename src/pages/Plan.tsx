@@ -1,5 +1,6 @@
 import useStore from '@/store/useStore'
 import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Plus, FileCheck, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -15,8 +16,10 @@ const statusColors: Record<string, string> = {
 const fmt = (n: number) => n.toLocaleString()
 
 export default function Plan() {
-  const { materialPlans, purchaseRequests, supplierQuotes, addPurchaseRequest, approvePurchaseRequest, rejectPurchaseRequest } = useStore()
-  const [activeTab, setActiveTab] = useState(0)
+  const { materialPlans, purchaseRequests, supplierQuotes, addPurchaseRequest, approvePurchaseRequest, rejectPurchaseRequest, progressToPurchased, currentRole } = useStore()
+  const [searchParams] = useSearchParams()
+  const tabParam = searchParams.get('tab')
+  const [activeTab, setActiveTab] = useState(tabParam === 'purchase' ? 2 : 0)
   const [showModal, setShowModal] = useState(false)
   const [form, setForm] = useState({ materialName: '', qty: '' })
   const [formError, setFormError] = useState('')
@@ -183,20 +186,35 @@ export default function Plan() {
                     <td className="px-4 py-3 text-gray-600">{r.approvedBy || '—'}</td>
                     <td className="px-4 py-3 text-center">
                       {r.status === '待审批' ? (
-                        <div className="flex items-center justify-center gap-2">
+                        currentRole === '物资经理' ? (
+                          <div className="flex items-center justify-center gap-2">
+                            <button
+                              onClick={() => approvePurchaseRequest(r.id)}
+                              className="px-2 py-0.5 text-xs font-medium rounded bg-green-500 text-white hover:bg-green-600 transition-colors"
+                            >
+                              通过
+                            </button>
+                            <button
+                              onClick={() => rejectPurchaseRequest(r.id, '审批驳回')}
+                              className="px-2 py-0.5 text-xs font-medium rounded bg-red-500 text-white hover:bg-red-600 transition-colors"
+                            >
+                              驳回
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-gray-400">无权限</span>
+                        )
+                      ) : r.status === '已审批' ? (
+                        currentRole === '物资经理' ? (
                           <button
-                            onClick={() => approvePurchaseRequest(r.id)}
-                            className="px-2 py-0.5 text-xs font-medium rounded bg-green-500 text-white hover:bg-green-600 transition-colors"
+                            onClick={() => progressToPurchased(r.id)}
+                            className="px-2 py-0.5 text-xs font-medium rounded bg-blue-500 text-white hover:bg-blue-600 transition-colors"
                           >
-                            通过
+                            推进采购
                           </button>
-                          <button
-                            onClick={() => rejectPurchaseRequest(r.id, '审批驳回')}
-                            className="px-2 py-0.5 text-xs font-medium rounded bg-red-500 text-white hover:bg-red-600 transition-colors"
-                          >
-                            驳回
-                          </button>
-                        </div>
+                        ) : (
+                          <span className="text-xs text-gray-400">无权限</span>
+                        )
                       ) : '—'}
                     </td>
                   </tr>

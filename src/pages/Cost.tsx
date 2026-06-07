@@ -1,4 +1,4 @@
-import useStore, { useDerived } from '@/store/useStore'
+import useStore, { useDerived, CostBreakdownItem } from '@/store/useStore'
 import { useState } from 'react'
 import {
   LineChart, Line, ComposedChart, Bar, PieChart, Pie, Cell,
@@ -28,7 +28,7 @@ const formatWan = (v: number) => (v / 10000).toFixed(1)
 export default function Cost() {
   const [activeTab, setActiveTab] = useState(0)
   const { priceAlerts, approvalRecords, documentArchives } = useStore()
-  const { costByCategory, costTrend, totalContractAmount, totalPaidAmount, totalPendingPayment } = useDerived()
+  const { costByCategory, costTrend, totalContractAmount, totalPaidAmount, totalPendingPayment, costBreakdown } = useDerived()
   const [docCategory, setDocCategory] = useState('全部')
   const [docSearch, setDocSearch] = useState('')
   const avgPrice = Math.round(priceTrendData.reduce((s, d) => s + d['HRB400螺纹钢'], 0) / priceTrendData.length)
@@ -118,56 +118,83 @@ export default function Cost() {
       )}
 
       {activeTab === 1 && (
-        <div className="grid grid-cols-3 gap-4">
-          <div className="col-span-2 bg-white rounded-lg border p-6">
-            <h3 className="text-sm font-medium text-[#1B3A5C] mb-4">预算与实际支出趋势</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <ComposedChart data={costTrend.map(c => ({
-                month: c.month.slice(5) + '月',
-                budget: +(c.budget / 10000).toFixed(1),
-                actual: +(c.actual / 10000).toFixed(1)
-              }))}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="month" tick={{ fontSize: 12 }} />
-                <YAxis tick={{ fontSize: 12 }} unit="万" />
-                <Tooltip formatter={(v: number) => `${v}万元`} />
-                <Legend />
-                <Bar dataKey="budget" name="预算" fill="#1B3A5C" radius={[4, 4, 0, 0]} />
-                <Line type="monotone" dataKey="actual" name="实际支出" stroke="#E67E22" strokeWidth={2} dot={{ r: 4 }} />
-              </ComposedChart>
-            </ResponsiveContainer>
+        <div className="space-y-4">
+          <div>
+            <h3 className="text-sm font-medium text-[#1B3A5C] mb-3">成本来源明细</h3>
+            <div className="grid grid-cols-4 gap-4">
+              {costBreakdown.map(item => {
+                const accentMap: Record<string, string> = {
+                  purchase: '#3B82F6',
+                  payment: '#22C55E',
+                  issue: '#E67E22',
+                  return: '#8B5CF6',
+                }
+                return (
+                  <div
+                    key={item.source}
+                    className="bg-white rounded-lg border p-4"
+                    style={{ borderLeftWidth: 4, borderLeftColor: accentMap[item.source] || '#3B82F6' }}
+                  >
+                    <p className="text-sm font-medium text-gray-700">{item.label}</p>
+                    <p className="text-lg font-bold text-[#1B3A5C] mt-1">{formatWan(item.amount)}万元</p>
+                    <p className="text-xs text-gray-400 mt-1">{item.detail}</p>
+                  </div>
+                )
+              })}
+            </div>
+            <p className="text-xs text-gray-400 mt-2">采购待发生 + 付款已发生 = 项目总发生成本，出库消耗为库存折算，退库冲减为退库折算</p>
           </div>
-          <div className="space-y-4">
-            <div className="bg-white rounded-lg border p-6">
-              <h3 className="text-sm font-medium text-[#1B3A5C] mb-4">成本分类占比</h3>
-              <ResponsiveContainer width="100%" height={200}>
-                <PieChart>
-                  <Pie data={costByCategory} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={70} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
-                    {costByCategory.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
-                  </Pie>
-                  <Tooltip formatter={(v: number) => `${formatWan(v)}万元`} />
-                  <Legend iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-                </PieChart>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="col-span-2 bg-white rounded-lg border p-6">
+              <h3 className="text-sm font-medium text-[#1B3A5C] mb-4">预算与实际支出趋势</h3>
+              <ResponsiveContainer width="100%" height={300}>
+                <ComposedChart data={costTrend.map(c => ({
+                  month: c.month.slice(5) + '月',
+                  budget: +(c.budget / 10000).toFixed(1),
+                  actual: +(c.actual / 10000).toFixed(1)
+                }))}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="month" tick={{ fontSize: 12 }} />
+                  <YAxis tick={{ fontSize: 12 }} unit="万" />
+                  <Tooltip formatter={(v: number) => `${v}万元`} />
+                  <Legend />
+                  <Bar dataKey="budget" name="预算" fill="#1B3A5C" radius={[4, 4, 0, 0]} />
+                  <Line type="monotone" dataKey="actual" name="实际支出" stroke="#E67E22" strokeWidth={2} dot={{ r: 4 }} />
+                </ComposedChart>
               </ResponsiveContainer>
             </div>
-            <div className="bg-white rounded-lg border p-6">
-              <h3 className="text-sm font-medium text-[#1B3A5C] mb-3">成本汇总</h3>
-              <div className="space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-500 text-sm">合同总额</span>
-                  <span className="text-[#1B3A5C] font-semibold">{formatWan(totalContractAmount)}万元</span>
+            <div className="space-y-4">
+              <div className="bg-white rounded-lg border p-6">
+                <h3 className="text-sm font-medium text-[#1B3A5C] mb-4">成本分类占比</h3>
+                <ResponsiveContainer width="100%" height={200}>
+                  <PieChart>
+                    <Pie data={costByCategory} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={70} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
+                      {costByCategory.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                    </Pie>
+                    <Tooltip formatter={(v: number) => `${formatWan(v)}万元`} />
+                    <Legend iconSize={8} wrapperStyle={{ fontSize: 11 }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="bg-white rounded-lg border p-6">
+                <h3 className="text-sm font-medium text-[#1B3A5C] mb-3">成本汇总</h3>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-500 text-sm">合同总额</span>
+                    <span className="text-[#1B3A5C] font-semibold">{formatWan(totalContractAmount)}万元</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-500 text-sm">已付金额</span>
+                    <span className="text-[#E67E22] font-semibold">{formatWan(totalPaidAmount)}万元</span>
+                  </div>
+                  <div className="border-t pt-3 flex justify-between items-center">
+                    <span className="text-gray-500 text-sm">待付余额</span>
+                    <span className="text-[#E67E22] font-semibold">
+                      {formatWan(totalPendingPayment)}万元
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-2">数据随审批和付款实时更新</p>
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-500 text-sm">已付金额</span>
-                  <span className="text-[#E67E22] font-semibold">{formatWan(totalPaidAmount)}万元</span>
-                </div>
-                <div className="border-t pt-3 flex justify-between items-center">
-                  <span className="text-gray-500 text-sm">待付余额</span>
-                  <span className="text-[#E67E22] font-semibold">
-                    {formatWan(totalPendingPayment)}万元
-                  </span>
-                </div>
-                <p className="text-xs text-gray-400 mt-2">数据随审批和付款实时更新</p>
               </div>
             </div>
           </div>

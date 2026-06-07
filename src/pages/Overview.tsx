@@ -38,6 +38,7 @@ export default function Overview() {
     approvePurchaseRequest, rejectPurchaseRequest,
     approvePaymentRequest, rejectPaymentRequest,
     approveWarehouseIssue,
+    currentRole,
   } = useStore()
   const {
     budgetExecutionRate, purchaseCompletionRate, acceptancePassRate, inventoryTurnoverRate,
@@ -74,30 +75,32 @@ export default function Overview() {
     { label: '库存周转率', value: inventoryTurnoverRate, icon: RefreshCw, color: '#8E44AD' },
   ]
 
+  const noPermission = <span className="text-xs text-gray-400 shrink-0">无权限</span>
+
   const renderActions = (item: typeof todoItems[number]) => {
     switch (item.type) {
       case '采购审批':
-        return (
+        return currentRole === '物资经理' ? (
           <div className="flex gap-1.5 shrink-0">
             <button onClick={(e) => { e.stopPropagation(); approvePurchaseRequest(item.id) }} className="flex items-center gap-1 px-2 py-0.5 rounded text-xs text-white bg-green-500 hover:bg-green-600"><Check size={12} />通过</button>
             <button onClick={(e) => { e.stopPropagation(); rejectPurchaseRequest(item.id, '驳回') }} className="flex items-center gap-1 px-2 py-0.5 rounded text-xs text-white bg-red-500 hover:bg-red-600"><X size={12} />驳回</button>
           </div>
-        )
+        ) : noPermission
       case '付款审批':
-        return (
+        return currentRole === '物资经理' ? (
           <div className="flex gap-1.5 shrink-0">
             <button onClick={(e) => { e.stopPropagation(); approvePaymentRequest(item.id) }} className="flex items-center gap-1 px-2 py-0.5 rounded text-xs text-white bg-green-500 hover:bg-green-600"><Check size={12} />通过</button>
             <button onClick={(e) => { e.stopPropagation(); rejectPaymentRequest(item.id, '驳回') }} className="flex items-center gap-1 px-2 py-0.5 rounded text-xs text-white bg-red-500 hover:bg-red-600"><X size={12} />驳回</button>
           </div>
-        )
+        ) : noPermission
       case '出库审核':
-        return (
+        return currentRole === '项目仓库' ? (
           <button onClick={(e) => { e.stopPropagation(); approveWarehouseIssue(item.id) }} className="flex items-center gap-1 px-2 py-0.5 rounded text-xs text-white bg-green-500 hover:bg-green-600 shrink-0"><Check size={12} />审核</button>
-        )
+        ) : noPermission
       case '物资签收':
-        return (
+        return currentRole === '分包队伍' ? (
           <button onClick={(e) => { e.stopPropagation(); navigate('/material') }} className="text-xs text-[#E67E22] hover:underline shrink-0">去签收</button>
-        )
+        ) : noPermission
     }
   }
 

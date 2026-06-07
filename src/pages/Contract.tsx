@@ -1,5 +1,6 @@
 import useStore from '@/store/useStore'
 import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { FileText, Receipt, CreditCard, Plus, X, Link2, Unlink } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -24,8 +25,11 @@ const tabs = [
 type TabKey = (typeof tabs)[number]['key']
 
 export default function Contract() {
-  const { contracts, invoices, paymentRequests, addPaymentRequest, updateInvoiceMatch, approvePaymentRequest, rejectPaymentRequest } = useStore()
-  const [activeTab, setActiveTab] = useState<TabKey>('ledger')
+  const { contracts, invoices, paymentRequests, addPaymentRequest, updateInvoiceMatch, approvePaymentRequest, rejectPaymentRequest, currentRole } = useStore()
+  const [searchParams] = useSearchParams()
+  const tabParam = searchParams.get('tab')
+  const initialTab: TabKey = tabParam === 'payment' ? 'payment' : 'ledger'
+  const [activeTab, setActiveTab] = useState<TabKey>(initialTab)
   const [selectedInvoice, setSelectedInvoice] = useState<string | null>(null)
   const [showModal, setShowModal] = useState(false)
   const [form, setForm] = useState({ contractId: '', amount: '', reason: '' })
@@ -303,21 +307,29 @@ export default function Contract() {
                       </td>
                       <td className="px-4 py-3">{pr.createdAt}</td>
                       <td className="px-4 py-3 text-center">
-                        {pr.status === '待审批' && (
-                          <div className="flex items-center justify-center gap-2">
-                            <button
-                              onClick={() => approvePaymentRequest(pr.id)}
-                              className="px-2 py-0.5 rounded text-xs font-medium bg-green-50 text-green-600 hover:bg-green-100"
-                            >
-                              通过
-                            </button>
-                            <button
-                              onClick={() => rejectPaymentRequest(pr.id, '审批驳回')}
-                              className="px-2 py-0.5 rounded text-xs font-medium bg-red-50 text-red-600 hover:bg-red-100"
-                            >
-                              驳回
-                            </button>
-                          </div>
+                        {pr.status === '待审批' ? (
+                          currentRole === '物资经理' ? (
+                            <div className="flex items-center justify-center gap-2">
+                              <button
+                                onClick={() => approvePaymentRequest(pr.id)}
+                                className="px-2 py-0.5 rounded text-xs font-medium bg-green-50 text-green-600 hover:bg-green-100"
+                              >
+                                通过
+                              </button>
+                              <button
+                                onClick={() => rejectPaymentRequest(pr.id, '审批驳回')}
+                                className="px-2 py-0.5 rounded text-xs font-medium bg-red-50 text-red-600 hover:bg-red-100"
+                              >
+                                驳回
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-400">
+                              无权限
+                            </span>
+                          )
+                        ) : (
+                          <span>—</span>
                         )}
                       </td>
                     </tr>
